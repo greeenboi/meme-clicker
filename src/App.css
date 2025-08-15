@@ -1,0 +1,63 @@
+/* Custom animations for the frog wizard clicker */
+.animate-float {
+	animation: float 3s ease-in-out infinite;
+}
+
+.animate-wiggle {
+	animation: wiggle 1s ease-in-out infinite;
+}
+
+.animate-sparkle {
+	animation: sparkle 1.5s ease-in-out infinite;
+}
+
+@keyframes float {
+	0%,
+	100% {
+		transform: translateY(0px);
+	}
+	50% {
+		transform: translateY(-10px);
+	}
+}
+
+@keyframes wiggle {
+	0%,
+	100% {
+		transform: rotate(-3deg);
+	}
+	50% {
+		transform: rotate(3deg);
+	}
+}
+
+@keyframes sparkle {
+	0%,
+	100% {
+		opacity: 0;
+		transform: scale(0);
+	}
+	50% {
+		opacity: 1;
+		transform: scale(1);
+	}
+}
+
+/* Scrollbar styling for webkit browsers */
+::-webkit-scrollbar {
+	width: 8px;
+}
+
+::-webkit-scrollbar-track {
+	background: #f1f5f9;
+	border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+	background: #16a34a;
+	border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background: #15803d;
+}
