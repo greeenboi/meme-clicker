@@ -1,12 +1,9 @@
-// Prototype-only client-side auth using bcryptjs + jose (JWT)
-// WARNING: Do not use this pattern for production apps.
-
 import { id } from "@instantdb/react";
 import bcrypt from "bcryptjs";
 import { SignJWT, jwtVerify } from "jose";
 import db from "./db";
+import { validateLogin, validateSignUp } from "./zod.auth";
 
-// Lazy-load bcryptjs to reduce bundle cost
 const COOKIE_NAME = "frog_auth";
 const JWT_SECRET = import.meta.env.VITE_JWT_SECRET || "dev-insecure-secret";
 const COOKIE_DAYS = 7;
@@ -66,6 +63,13 @@ export async function signUp(
 	username: string,
 	password: string,
 ) {
+	const parsed = validateSignUp({ email, username, password });
+	if (!parsed.success) {
+		const first = parsed.error.issues[0];
+		throw new Error(first.message);
+	}
+	// use normalized values (e.g., lowercased email, trimmed fields)
+	({ email, username, password } = parsed.data);
 	// Ensure username and email availability
 	const { data: profilesData } = await db.queryOnce({
 		profiles: { $: { where: { username } } },
@@ -126,6 +130,12 @@ export async function signUp(
 }
 
 export async function login(email: string, password: string) {
+	const parsed = validateLogin({ email, password });
+	if (!parsed.success) {
+		const first = parsed.error.issues[0];
+		throw new Error(first.message);
+	}
+	({ email, password } = parsed.data);
 	const { data } = await db.queryOnce({
 		auths: { $: { where: { email } } },
 	});
