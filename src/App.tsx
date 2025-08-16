@@ -1,193 +1,22 @@
 import type { InstaQLEntity, InstaQLParams } from "@instantdb/react";
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import type { AppSchema } from "./instant.schema";
 import {
 	type AuthToken,
 	getCurrentUser,
-	login,
 	logout,
-	signUp,
 } from "./lib/auth";
 import db from "./lib/db";
 import "./index.css";
-import { RefreshCcw } from "lucide-react";
 import { Achievements } from "./components/Achievements";
 import { GameStats } from "./components/GameStats";
 import { Spells } from "./components/Spells";
 import { UpgradeShop } from "./components/UpgradeShop";
 import { playClickSfx } from "./lib/sfx";
 import { useGameLogic } from "./lib/useGameLogic";
-
-// Simple swamp theme helpers
-const swampBg =
-	"bg-gradient-to-b from-emerald-900 via-emerald-800 to-emerald-900";
-const swampPanel =
-	"bg-emerald-800/70 backdrop-blur border border-emerald-600/50 shadow-xl";
-
-function AuthPanel({ onAuthed }: { onAuthed: (u: AuthToken) => void }) {
-	const [mode, setMode] = useState<"login" | "signup">("signup");
-	const [email, setEmail] = useState("");
-	const [username, setUsername] = useState("");
-	const [password, setPassword] = useState("");
-	const [error, setError] = useState<string | null>(null);
-	const [loading, setLoading] = useState(false);
-
-	const submit = async (e?: FormEvent) => {
-		e?.preventDefault();
-		try {
-			setLoading(true);
-			setError(null);
-			const user =
-				mode === "signup"
-					? await signUp(email.trim(), username.trim(), password)
-					: await login(email.trim(), password);
-			onAuthed(user);
-		} catch (e: unknown) {
-			setError(e instanceof Error ? e.message : "Something went wrong");
-		} finally {
-			setLoading(false);
-		}
-	};
-
-	return (
-		<div className={`max-w-md mx-auto p-6 rounded-2xl ${swampPanel}`}>
-			<h2 className="text-2xl font-extrabold text-emerald-100 mb-4 flex items-center gap-2">
-				🐸 Frog Wizard Guild
-			</h2>
-			<form className="space-y-3" onSubmit={submit}>
-				<div>
-					<label className="block text-emerald-200 text-sm mb-1">Email</label>
-					<input
-						className="w-full px-3 py-2 rounded-lg bg-emerald-900/50 border border-emerald-700 text-emerald-100"
-						value={email}
-						onChange={(e) => setEmail(e.target.value)}
-						placeholder="you@swamp.com"
-					/>
-				</div>
-				{mode === "signup" && (
-					<div>
-						<label className="block text-emerald-200 text-sm mb-1">
-							Username
-						</label>
-						<input
-							className="w-full px-3 py-2 rounded-lg bg-emerald-900/50 border border-emerald-700 text-emerald-100"
-							value={username}
-							onChange={(e) => setUsername(e.target.value)}
-							placeholder="frog_wizard"
-						/>
-					</div>
-				)}
-				<div>
-					<label className="block text-emerald-200 text-sm mb-1">
-						Password
-					</label>
-					<input
-						type="password"
-						className="w-full px-3 py-2 rounded-lg bg-emerald-900/50 border border-emerald-700 text-emerald-100"
-						value={password}
-						onChange={(e) => setPassword(e.target.value)}
-						placeholder="••••••••"
-					/>
-				</div>
-				{error && <div className="text-red-300 text-sm">{error}</div>}
-				<button
-					type="submit"
-					disabled={loading}
-					className="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-emerald-50 font-semibold"
-				>
-					{loading
-						? "Working..."
-						: mode === "signup"
-							? "Create Guild Account"
-							: "Enter the Swamp"}
-				</button>
-				<button
-					type="button"
-					onClick={() => setMode(mode === "signup" ? "login" : "signup")}
-					className="w-full py-2 rounded-lg bg-emerald-900/40 border border-emerald-700 text-emerald-200"
-				>
-					{mode === "signup"
-						? "Already have an account? Login"
-						: "Need an account? Sign up"}
-				</button>
-			</form>
-		</div>
-	);
-}
-
-// Async Leaderboard using one-off queries and manual refresh
-function LeaderboardAsync() {
-	const [entries, setEntries] = useState<
-		Array<{ username: string; frogs: number }>
-	>([]);
-	const [loading, setLoading] = useState(false);
-
-	const load = useCallback(async () => {
-		setLoading(true);
-		try {
-			const query = {
-				stats: {
-					$: { order: { totalFrogs: "desc" as const }, limit: 10 },
-					profile: {},
-				},
-			} satisfies InstaQLParams<AppSchema>;
-			const { data } = await db.queryOnce(query);
-			type StatWithProfile = InstaQLEntity<
-				AppSchema,
-				"stats",
-				{ profile: Record<string, never> }
-			>;
-			const mapped = (data?.stats || [])
-				.map((s) => s as StatWithProfile)
-				.map((s) => ({
-					username: s.profile?.username ?? "frogling",
-					frogs: s.totalFrogs ?? 0,
-				}))
-				.slice(0, 10);
-			setEntries(mapped);
-		} finally {
-			setLoading(false);
-		}
-	}, []);
-
-	useEffect(() => {
-		load();
-	}, [load]);
-
-	return (
-		<div className={`p-4 rounded-xl ${swampPanel}`}>
-			<div className="flex items-center justify-between mb-2">
-				<h3 className="text-emerald-100 font-bold">🏆 Swamp Leaderboard</h3>
-				<button
-					type="button"
-					onClick={load}
-					disabled={loading}
-					className="px-2 py-1 rounded bg-emerald-700 text-emerald-50 text-sm border border-emerald-500"
-				>
-					<RefreshCcw className={loading ? "animate-spin" : "text-sm"} />
-				</button>
-			</div>
-			<ol className="space-y-1">
-				{entries.map((e, i) => (
-					<li
-						key={`${e.username}-${i}`}
-						className="flex justify-between text-emerald-200"
-					>
-						<span className="truncate">
-							{i + 1}. {e.username}
-						</span>
-						<span className="font-semibold">
-							{Math.floor(e.frogs).toLocaleString()} 🐸
-						</span>
-					</li>
-				))}
-				{entries.length === 0 && !loading && (
-					<li className="text-emerald-300 text-sm">No entries yet</li>
-				)}
-			</ol>
-		</div>
-	);
-}
+import { swampBg, swampPanel } from "./types/swamp";
+import LeaderboardAsync from "./components/LeaderboardAsync";
+import AuthPanel from "./components/AuthPanel";
 
 export default function App() {
 	const [user, setUser] = useState<AuthToken | null>(null);
