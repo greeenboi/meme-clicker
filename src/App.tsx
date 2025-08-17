@@ -12,7 +12,7 @@ import { Achievements } from "./components/Achievements";
 import { GameStats } from "./components/GameStats";
 import { Spells } from "./components/Spells";
 import { UpgradeShop } from "./components/UpgradeShop";
-import { playClickSfx } from "./lib/sfx";
+import { playClickSfx, playCritSfx } from "./lib/sfx";
 import { useGameLogic } from "./lib/useGameLogic";
 import { swampBg, swampPanel } from "./types/swamp";
 import LeaderboardAsync from "./components/LeaderboardAsync";
@@ -21,6 +21,7 @@ import AuthPanel from "./components/AuthPanel";
 export default function App() {
 	const [user, setUser] = useState<AuthToken | null>(null);
 	const [clicking, setClicking] = useState(false);
+	const [crit, setCrit] = useState<{ show: boolean; mult: number }>({ show: false, mult: 1 });
 
 	// Load current user from cookie
 	useEffect(() => {
@@ -78,14 +79,21 @@ export default function App() {
 		const power = clickPower;
 		// SFX: play sounds based on current total clicks BEFORE increment (consistency)
 		playClickSfx(Math.floor(gameState.totalClicks));
-		// Update local game logic first
-		clickFrog();
+		// Update local game logic first and get applied power (handles crits)
+		const applied = clickFrog();
+		if (applied && applied > power) {
+			const mult = Math.max(1, Math.round((applied / power) * 10) / 10);
+			setCrit({ show: true, mult });
+			setTimeout(() => setCrit((c) => ({ ...c, show: false })), 650);
+			// Play crit-specific SFX
+			playCritSfx();
+		}
 		try {
 			if (stats) {
 				await db.transact(
 					db.tx.stats[stats.id].merge({
 						totalClicks: (stats.totalClicks ?? 0) + 1,
-						totalFrogs: (stats.totalFrogs ?? 0) + power,
+						totalFrogs: (stats.totalFrogs ?? 0) + (applied ?? power),
 						lastActiveAt: new Date().toISOString(),
 					}),
 				);
@@ -99,14 +107,31 @@ export default function App() {
 		return (
 			<main className={`min-h-screen ${swampBg} text-emerald-50 p-4 md:p-6`}>
 				<div className="max-w-6xl h-full mx-auto grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 items-start">
-					<div className="space-y-4">
-						<h1 className="text-3xl md:text-4xl font-extrabold text-emerald-100">
-							Frog Wizard Clicker
-						</h1>
-						<p className="text-emerald-200">
-							Conjure frogs, trade trinkets, and rise on the swamp leaderboard.
-						</p>
-						<LeaderboardAsync />
+					{/* Left panel with looping background video */}
+					<div className="relative overflow-hidden rounded-2xl">
+						<video
+							className="absolute inset-0 w-full h-full object-cover opacity-35 [filter:saturate(0.95)] pointer-events-none motion-reduce:hidden"
+							autoPlay
+							muted
+							loop
+							playsInline
+							aria-hidden
+						>
+							<source src="/media/frog-wizard-loop.mp4" type="video/mp4" />
+							{/* Put your generated loop at public/media/frog-wizard-loop.mp4 */}
+						</video>
+						<div className="absolute inset-0 bg-emerald-950/40" aria-hidden />
+						<div className="relative p-4 md:p-5 space-y-4">
+							<h1 className="text-3xl md:text-4xl font-extrabold text-emerald-100 drop-shadow">
+								Frog Wizard Clicker
+							</h1>
+							<p className="text-emerald-100/90 max-w-prose">
+								Conjure frogs, trade trinkets, and rise on the swamp leaderboard.
+							</p>
+							<div className="backdrop-blur-[1px]">
+								<LeaderboardAsync />
+							</div>
+						</div>
 					</div>
 					<AuthPanel onAuthed={setUser} />
 				</div>
@@ -118,8 +143,22 @@ export default function App() {
 		<div className={`min-h-screen ${swampBg} text-emerald-50 p-4 md:p-6`}>
 			<div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
 				<div className="lg:col-span-2 space-y-4 md:space-y-6">
-					<div className={`p-4 md:p-5 rounded-2xl ${swampPanel}`}>
-						<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+					<div className={`p-4 md:p-5 rounded-2xl ${swampPanel} relative overflow-hidden`}>
+						{/* Inset background video for the main click area */}
+						<video
+							className="absolute inset-0 w-full h-full object-cover opacity-30 [filter:saturate(0.9)] pointer-events-none motion-reduce:hidden"
+							autoPlay
+							muted
+							loop
+							playsInline
+							aria-hidden
+						>
+							<source src="/media/frog-wizard-loop.mp4" type="video/mp4" />
+						</video>
+						<div className="absolute inset-0 bg-emerald-950/40" aria-hidden />
+
+						<div className="relative z-10">
+							<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
 							<div>
 								<div className="text-base md:text-lg font-bold">
 									Welcome, {user.username} 🐸
@@ -141,7 +180,15 @@ export default function App() {
 							</button>
 						</div>
 
-						<div className="flex flex-col items-center py-6 md:py-8">
+						<div className="relative flex flex-col items-center py-6 md:py-8">
+							{crit.show && (
+								<div
+									className="absolute -top-2 md:-top-3 translate-y-[-100%] select-none text-amber-300 font-extrabold text-lg md:text-2xl drop-shadow-[0_2px_2px_rgba(0,0,0,0.6)] animate-bounce"
+									aria-hidden
+								>
+									✨ CRIT! x{crit.mult}
+								</div>
+							)}
 							<button
 								type="button"
 								onClick={addClick}
@@ -153,6 +200,7 @@ export default function App() {
 							<div className="mt-3 text-emerald-200 text-sm">
 								Clicks: {Math.floor(gameState.totalClicks).toLocaleString()}
 							</div>
+						</div>
 						</div>
 					</div>
 
