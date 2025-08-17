@@ -5,7 +5,7 @@ import { type AuthToken, getCurrentUser, logout } from "./lib/auth";
 import db from "./lib/db";
 import "./index.css";
 import { id } from "@instantdb/react";
-import { LogOut, Volume2, VolumeX } from "lucide-react";
+import { BookOpenText, LogOut, Volume2, VolumeX } from "lucide-react";
 import { Achievements } from "./components/Achievements";
 import AuthPanel from "./components/AuthPanel";
 import { GameStats } from "./components/GameStats";
@@ -35,6 +35,14 @@ export default function App() {
 	const [zenMode, setZenMode] = useState(false);
 	const [prevSfx, setPrevSfx] = useState<boolean | null>(null);
 	const [streamOk, setStreamOk] = useState<boolean | null>(null);
+	const [toast, setToast] = useState<{ show: boolean; title?: string }>(
+		{ show: false },
+	);
+	const [lorePrompt, setLorePrompt] = useState<{
+		show: boolean;
+		entries: InstaQLEntity<AppSchema, "loreEntries">[];
+	}>({ show: false, entries: [] });
+	const [dismissedLoreKeys, setDismissedLoreKeys] = useState<Set<string>>(new Set());
 
 	useEffect(() => {
 		setSfxEnabled(sfxOn);
@@ -129,6 +137,16 @@ export default function App() {
 		| undefined;
 	const stats = profile?.stats as InstaQLEntity<AppSchema, "stats"> | undefined;
 
+	// Lore unlocks for unread badge
+	const loreQuery: InstaQLParams<AppSchema> | null = user
+		? { loreUnlocks: { $: { where: { ownerId: user.ownerId } } } }
+		: null;
+	const { data: loreData } = db.useQuery(loreQuery);
+	type Unlock = InstaQLEntity<AppSchema, "loreUnlocks">;
+	const unreadCount = ((loreData?.loreUnlocks || []) as Unlock[]).filter((u) => !u.readAt).length;
+
+	// Central lore unlock evaluation effect is declared after gameState
+
 	// Game logic
 	const {
 		gameState,
@@ -143,6 +161,113 @@ export default function App() {
 		clickPower,
 		hydrateFromPersisted,
 	} = useGameLogic();
+
+	// Central evaluation: collect eligible-but-locked entries and prompt
+	useEffect(() => {
+		if (!user) return;
+		let cancelled = false;
+		(async () => {
+			const unlocked = new Set(
+				((loreData?.loreUnlocks || []) as Unlock[]).map((u) => u.loreKey as string),
+			);
+			const { data: all } = await db.queryOnce({ loreEntries: {} });
+			const entries = (all.loreEntries || []) as InstaQLEntity<AppSchema, "loreEntries">[];
+			const eligible: InstaQLEntity<AppSchema, "loreEntries">[] = [];
+			for (const entry of entries) {
+				if (cancelled) return;
+				const key = entry.key as string;
+				if (unlocked.has(key) || dismissedLoreKeys.has(key)) continue;
+				let shouldUnlock = false;
+				const ctype = entry.conditionType as string | undefined;
+				const cval = entry.conditionValue as string | undefined;
+				if (ctype === "threshold") {
+					const thr = Number(cval);
+					if (!Number.isNaN(thr) && gameState.totalFrogs >= thr) shouldUnlock = true;
+				} else if (!ctype && key.startsWith("threshold-")) {
+					const thr = Number(key.split("-")[1]);
+					if (!Number.isNaN(thr) && gameState.totalFrogs >= thr) shouldUnlock = true;
+				} else if (ctype === "prestige") {
+					const req = Number(cval);
+					if (!Number.isNaN(req) && (stats?.prestige ?? 0) >= req) shouldUnlock = true;
+				} else if (ctype === "time") {
+					const hour = new Date().getHours();
+					if (cval === "night") shouldUnlock = hour >= 19 || hour < 6;
+					if (cval === "day") shouldUnlock = hour >= 6 && hour < 19;
+				}
+				if (shouldUnlock) eligible.push(entry);
+			}
+			if (!cancelled && eligible.length > 0) {
+				setLorePrompt({ show: true, entries: eligible });
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [user?.ownerId, gameState.totalFrogs, stats?.prestige, loreData?.loreUnlocks?.length, dismissedLoreKeys]);
+
+	const unlockPromptedLore = async () => {
+		if (!user || lorePrompt.entries.length === 0) return;
+		for (const entry of lorePrompt.entries) {
+			const key = entry.key as string;
+			const unlockId = id();
+			await db.transact(
+				db.tx.loreUnlocks[unlockId].create({
+					ownerId: user.ownerId,
+					loreKey: key,
+					unlockedAt: new Date().toISOString(),
+				}),
+			);
+			if (entry.id) {
+				await db.transact(db.tx.loreUnlocks[unlockId].link({ loreEntry: entry.id }));
+			}
+		}
+		// toast summary
+		setToast({ show: true, title: lorePrompt.entries.length === 1 ? (lorePrompt.entries[0].title as string) : `${lorePrompt.entries.length} entries` });
+		setTimeout(() => setToast({ show: false }), 3000);
+		setLorePrompt({ show: false, entries: [] });
+	};
+
+	const dismissLorePrompt = () => {
+		if (lorePrompt.entries.length > 0) {
+			setDismissedLoreKeys((prev) => new Set([...prev, ...lorePrompt.entries.map((e) => e.key as string)]));
+		}
+		setLorePrompt({ show: false, entries: [] });
+	};
+
+	// Actively check eligibility on demand (Codex button)
+	const checkAndPromptEligibleLore = async () => {
+		if (!user) return;
+		const unlocked = new Set(
+			((loreData?.loreUnlocks || []) as Unlock[]).map((u) => u.loreKey as string),
+		);
+		const { data: all } = await db.queryOnce({ loreEntries: {} });
+		const entries = (all.loreEntries || []) as InstaQLEntity<AppSchema, "loreEntries">[];
+		const eligible: InstaQLEntity<AppSchema, "loreEntries">[] = [];
+		for (const entry of entries) {
+			const key = entry.key as string;
+			if (unlocked.has(key) || dismissedLoreKeys.has(key)) continue;
+			let shouldUnlock = false;
+			const ctype = entry.conditionType as string | undefined;
+			const cval = entry.conditionValue as string | undefined;
+			if (ctype === "threshold") {
+				const thr = Number(cval);
+				if (!Number.isNaN(thr) && gameState.totalFrogs >= thr) shouldUnlock = true;
+			} else if (!ctype && key.startsWith("threshold-")) {
+				const thr = Number(key.split("-")[1]);
+				if (!Number.isNaN(thr) && gameState.totalFrogs >= thr) shouldUnlock = true;
+			} else if (ctype === "prestige") {
+				const req = Number(cval);
+				if (!Number.isNaN(req) && (stats?.prestige ?? 0) >= req) shouldUnlock = true;
+			} else if (ctype === "time") {
+				const hour = new Date().getHours();
+				if (cval === "night") shouldUnlock = hour >= 19 || hour < 6;
+				if (cval === "day") shouldUnlock = hour >= 6 && hour < 19;
+			}
+			if (shouldUnlock) eligible.push(entry);
+		}
+		if (eligible.length > 0) setLorePrompt({ show: true, entries: eligible });
+	};
 
 	useEffect(() => {
 		if (stats) {
@@ -175,37 +300,7 @@ export default function App() {
 					}),
 				);
 
-				// Lore unlocks: simple thresholds; idempotent
-				const newTotal = (stats.totalFrogs ?? 0) + (applied ?? power);
-				const thresholds = [50, 500, 5000];
-				for (const t of thresholds) {
-					if (newTotal >= t && user) {
-						const loreKey = `threshold-${t}`;
-						const { data: udata } = await db.queryOnce({
-							loreUnlocks: { $: { where: { ownerId: user.ownerId, loreKey } } },
-						});
-						if ((udata.loreUnlocks || []).length === 0) {
-							const unlockId = id();
-							await db.transact(
-								db.tx.loreUnlocks[unlockId].create({
-									ownerId: user.ownerId,
-									loreKey,
-									unlockedAt: new Date().toISOString(),
-								}),
-							);
-							// Link unlock to the lore entry if present
-							const { data: edata } = await db.queryOnce({
-								loreEntries: { $: { where: { key: loreKey } } },
-							});
-							const entry = (edata.loreEntries || [])[0];
-							if (entry?.id) {
-								await db.transact(
-									db.tx.loreUnlocks[unlockId].link({ loreEntry: entry.id }),
-								);
-							}
-						}
-					}
-				}
+				// Lore unlocks handled by central effect
 			}
 		} finally {
 			setTimeout(() => setClicking(false), 120);
@@ -284,6 +379,24 @@ export default function App() {
 									</div>
 								</div>
 								<div className="flex items-center gap-2">
+									<button
+										type="button"
+										onClick={async () => {
+											await checkAndPromptEligibleLore();
+											const el = document.getElementById("codex");
+											if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+										}}
+										className="px-2 py-1.5 rounded-lg border bg-emerald-900/40 border-emerald-700 text-emerald-200 text-sm flex items-center gap-1.5"
+										title="Open Codex"
+									>
+										<BookOpenText size={16} />
+										<span>Codex</span>
+										{unreadCount > 0 && (
+											<span className="ml-1 text-amber-300 text-[10px] border border-amber-400/60 px-1 py-0.5 rounded">
+												{unreadCount}
+											</span>
+										)}
+									</button>
 									<button
 										type="button"
 										onClick={() => setSfxOn((v) => !v)}
@@ -405,11 +518,44 @@ export default function App() {
 						onCast={castSpell}
 					/>
 					{!zenMode && <Achievements achievements={achievementList} />}
-					{!zenMode && user && <LoreCodex ownerId={user.ownerId} />}
+					{!zenMode && user && <LoreCodex ownerId={user.ownerId} anchorId="codex" />}
 				</div>
 			</div>
 			{/* Hidden YouTube lofi player for Zen Mode fallback when streams fail */}
 			<ZenPlayer active={zenMode && streamOk === false} />
+			{/* Tiny toast for new lore unlocks */}
+			{toast.show && (
+				<div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 px-3 py-2 rounded-lg bg-emerald-900/80 border border-emerald-700 text-emerald-100 text-sm shadow-lg">
+					New lore discovered{toast.title ? `: ${toast.title}` : ""}
+				</div>
+			)}
+			{/* Prompt to unlock eligible lore */}
+			{lorePrompt.show && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center">
+					<div className="absolute inset-0 bg-black/50" onClick={dismissLorePrompt} />
+					<div className={`relative w-full max-w-md mx-3 rounded-xl border ${swampPanel} p-4`}>
+						<h4 className="text-emerald-100 font-bold mb-2">Unlock Codex entries?</h4>
+						<p className="text-emerald-200 text-sm mb-3">
+							You’ve already met the requirements for these lore entries:
+						</p>
+						<ul className="text-emerald-100 text-sm space-y-1 max-h-40 overflow-y-auto pr-1">
+							{lorePrompt.entries.map((e) => (
+								<li key={e.key as string} className="flex items-start gap-2">
+									<span className="mt-0.5">•</span>
+									<span>
+										<span className="font-semibold">{e.title as string}</span>
+										<span className="text-emerald-300"> — {e.guild as string}</span>
+									</span>
+								</li>
+							))}
+						</ul>
+						<div className="mt-4 flex items-center justify-end gap-2">
+							<button onClick={dismissLorePrompt} className="px-3 py-1.5 rounded-lg border border-emerald-700 bg-emerald-900/40 text-emerald-200 text-sm">Later</button>
+							<button onClick={unlockPromptedLore} className="px-3 py-1.5 rounded-lg border border-emerald-600 bg-emerald-700/60 hover:bg-emerald-700/70 text-emerald-100 text-sm font-semibold">Unlock now</button>
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }

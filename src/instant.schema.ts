@@ -72,6 +72,8 @@ const _schema = i.schema({
 			guild: i.string().indexed(),
 			order: i.number().indexed(),
 			body: i.string(),
+			conditionType: i.string().optional(), // 'threshold' | 'prestige' | 'achievement' | 'upgrade' | 'time'
+			conditionValue: i.string().optional(), // e.g., '5000', '1', 'first-frog', 'fish-net', 'night'
 		}),
 
 		// Lore unlocks per player

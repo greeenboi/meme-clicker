@@ -74,7 +74,9 @@ export default function LeaderboardAsync() {
 		<div className={`p-4 rounded-xl ${swampPanel}`}>
 			<div className="flex items-center justify-between mb-2">
 				<h3 className="text-emerald-100 font-bold">🏆 Swamp Leaderboard</h3>
-				<p className="text-emerald-300 text-xs flex gap-1 flex-nowrap text-nowrap">{totalUsers.toLocaleString()} <User size={16} /></p>
+				<p className="text-emerald-300 text-xs flex gap-1 flex-nowrap text-nowrap">
+					{totalUsers.toLocaleString()} <User size={16} />
+				</p>
 			</div>
 			<ol className="space-y-1">
 				{entries.map((e, i) => (
