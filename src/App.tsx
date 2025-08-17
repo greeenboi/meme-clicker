@@ -33,12 +33,15 @@ export default function App() {
 		setSfxEnabled(sfxOn);
 	}, [sfxOn]);
 
-		// Zen Mode: mute SFX; restore on exit (music handled by <ZenPlayer />)
+			// Zen Mode: mute SFX; restore on exit; also ensure streams stop when exiting
 	useEffect(() => {
 		if (zenMode) {
 			setPrevSfx((p) => (p === null ? sfxOn : p));
 			if (sfxOn) setSfxOn(false);
 		} else {
+					// Stop any active radio stream and clear fallback marker
+					stopZenMusic();
+					setStreamOk(null);
 			if (prevSfx !== null) {
 				setSfxOn(prevSfx);
 				setPrevSfx(null);

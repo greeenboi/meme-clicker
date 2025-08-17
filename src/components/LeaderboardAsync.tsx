@@ -1,5 +1,5 @@
 import type { InstaQLEntity, InstaQLParams } from "@instantdb/react";
-import { MoreVertical } from "lucide-react";
+import { MoreVertical, User } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { AppSchema } from "../instant.schema";
 import { type AuthToken, getCurrentUser } from "../lib/auth";
@@ -10,6 +10,14 @@ type Entry = { ownerId: string; username: string; frogs: number };
 
 export default function LeaderboardAsync() {
 	const [user, setUser] = useState<AuthToken | null>(null);
+
+	// Total users (profiles) count
+	const countQuery = useMemo(
+		() => ({ profiles: { $: { fields: ["id"] } } }) as InstaQLParams<AppSchema>,
+		[],
+	);
+	const { data: countData } = db.useQuery(countQuery);
+	const totalUsers = (countData?.profiles?.length as number | undefined) ?? 0;
 
 	// Realtime top 5
 	const lbQuery = useMemo(
@@ -66,7 +74,7 @@ export default function LeaderboardAsync() {
 		<div className={`p-4 rounded-xl ${swampPanel}`}>
 			<div className="flex items-center justify-between mb-2">
 				<h3 className="text-emerald-100 font-bold">🏆 Swamp Leaderboard</h3>
-				<span className="text-emerald-300 text-xs">live</span>
+				<p className="text-emerald-300 text-xs flex gap-1 flex-nowrap text-nowrap">{totalUsers.toLocaleString()} <User size={16} /></p>
 			</div>
 			<ol className="space-y-1">
 				{entries.map((e, i) => (
