@@ -1,77 +1,85 @@
-import { RefreshCcw } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { MoreVertical } from "lucide-react";
 import { swampPanel } from "../types/swamp";
-import { useCallback, useEffect, useState } from "react";
-import type { InstaQLEntity, InstaQLParams } from "@instantdb/react";
 import db from "../lib/db";
+import { getCurrentUser, type AuthToken } from "../lib/auth";
+import type { InstaQLEntity, InstaQLParams } from "@instantdb/react";
 import type { AppSchema } from "../instant.schema";
 
-export default function LeaderboardAsync() {
-	const [entries, setEntries] = useState<
-		Array<{ username: string; frogs: number }>
-	>([]);
-	const [loading, setLoading] = useState(false);
+type Entry = { ownerId: string; username: string; frogs: number };
 
-	const load = useCallback(async () => {
-		setLoading(true);
-		try {
-			const query = {
-				stats: {
-					$: { order: { totalFrogs: "desc" as const }, limit: 10 },
-					profile: {},
-				},
-			} satisfies InstaQLParams<AppSchema>;
-			const { data } = await db.queryOnce(query);
-			type StatWithProfile = InstaQLEntity<
-				AppSchema,
-				"stats",
-				{ profile: Record<string, never> }
-			>;
-			const mapped = (data?.stats || [])
-				.map((s) => s as StatWithProfile)
-				.map((s) => ({
-					username: s.profile?.username ?? "frogling",
-					frogs: s.totalFrogs ?? 0,
-				}))
-				.slice(0, 10);
-			setEntries(mapped);
-		} finally {
-			setLoading(false);
-		}
+export default function LeaderboardAsync() {
+	const [user, setUser] = useState<AuthToken | null>(null);
+
+	// Realtime top 5
+		const lbQuery = useMemo(
+			() =>
+				({
+					stats: {
+						$: { order: { totalFrogs: "desc" as const }, limit: 5 },
+						profile: {},
+					},
+				} satisfies InstaQLParams<AppSchema>),
+			[],
+		);
+	const { data: lbData, isLoading: lbLoading } = db.useQuery(lbQuery);
+		type StatWithProfile = InstaQLEntity<AppSchema, "stats", { profile: Record<string, never> }>;
+		const entries: Entry[] = useMemo(() => {
+			const rows = (lbData?.stats || []) as unknown as StatWithProfile[];
+			return rows.map((s) => ({
+				ownerId: s.ownerId,
+				username: s.profile?.username ?? "frogling",
+				frogs: Math.floor(s.totalFrogs ?? 0),
+			}));
+		}, [lbData]);
+
+	// Current user from cookie
+	useEffect(() => {
+		getCurrentUser().then(setUser).catch(() => setUser(null));
 	}, []);
 
-	useEffect(() => {
-		load();
-	}, [load]);
+	// Realtime current user's frogs
+		const myStatsQuery = useMemo<InstaQLParams<AppSchema> | undefined>(() => {
+			if (!user?.ownerId) return undefined;
+			return { stats: { $: { where: { ownerId: user.ownerId } } } } as const;
+		}, [user?.ownerId]);
+			const { data: myData } = db.useQuery(myStatsQuery ?? null);
+		type StatRow = InstaQLEntity<AppSchema, "stats">;
+		const myFrogs = useMemo(() => {
+			const rows = (myData?.stats || []) as unknown as StatRow[];
+			const s = rows[0];
+			return s ? Math.floor((s.totalFrogs as number) || 0) : 0;
+		}, [myData]);
+
+	const isMeInTop = useMemo(() => {
+		if (!user?.ownerId) return false;
+		return entries.some((e) => e.ownerId === user.ownerId);
+	}, [entries, user?.ownerId]);
 
 	return (
 		<div className={`p-4 rounded-xl ${swampPanel}`}>
 			<div className="flex items-center justify-between mb-2">
 				<h3 className="text-emerald-100 font-bold">🏆 Swamp Leaderboard</h3>
-				<button
-					type="button"
-					onClick={load}
-					disabled={loading}
-					className="px-2 py-1 rounded bg-emerald-700 text-emerald-50 text-sm border border-emerald-500"
-				>
-					<RefreshCcw className={loading ? "animate-spin" : "text-sm"} />
-				</button>
+				<span className="text-emerald-300 text-xs">live</span>
 			</div>
 			<ol className="space-y-1">
 				{entries.map((e, i) => (
-					<li
-						key={`${e.username}-${i}`}
-						className="flex justify-between text-emerald-200"
-					>
-						<span className="truncate">
-							{i + 1}. {e.username}
-						</span>
-						<span className="font-semibold">
-							{Math.floor(e.frogs).toLocaleString()} 🐸
-						</span>
+					<li key={`${e.ownerId}-${i}`} className="flex justify-between text-emerald-200">
+						<span className="truncate">{i + 1}. {e.username}</span>
+						<span className="font-semibold">{e.frogs.toLocaleString()} 🐸</span>
 					</li>
 				))}
-				{entries.length === 0 && !loading && (
+				{entries.length === 0 && !lbLoading && (
 					<li className="text-emerald-300 text-sm">No entries yet</li>
+				)}
+				{user && !isMeInTop && (
+					<>
+						<li className="flex justify-center text-emerald-400"><MoreVertical size={16} /></li>
+						<li className="flex justify-between text-emerald-200">
+							<span className="truncate">You ({user.username})</span>
+							<span className="font-semibold">{myFrogs.toLocaleString()} 🐸</span>
+						</li>
+					</>
 				)}
 			</ol>
 		</div>
