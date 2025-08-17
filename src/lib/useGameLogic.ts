@@ -226,6 +226,8 @@ export const useGameLogic = (initial?: {
 		);
 	}, [gameState.totalFrogs]);
 
+	// lore unlocks are handled in App with access to the current user id
+
 	return {
 		gameState,
 		upgrades,

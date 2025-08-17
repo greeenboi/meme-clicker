@@ -64,6 +64,23 @@ const _schema = i.schema({
 			type: i.string(), // 'click' | 'auto'
 			multiplier: i.number(),
 		}),
+
+		// Lore: static entries of in-world fiction
+		loreEntries: i.entity({
+			key: i.string().unique().indexed(),
+			title: i.string(),
+			guild: i.string().indexed(),
+			order: i.number().indexed(),
+			body: i.string(),
+		}),
+
+		// Lore unlocks per player
+		loreUnlocks: i.entity({
+			ownerId: i.string().indexed(),
+			loreKey: i.string().indexed(),
+			unlockedAt: i.date(),
+			readAt: i.date().optional(),
+		}),
 	},
 	links: {
 		// If you enable Instant Auth later, you can use these links safely
@@ -78,6 +95,14 @@ const _schema = i.schema({
 		purchaseOwner: {
 			forward: { on: "purchases", has: "one", label: "profile" },
 			reverse: { on: "profiles", has: "many", label: "purchases" },
+		},
+		loreUnlockOwner: {
+			forward: { on: "loreUnlocks", has: "one", label: "profile" },
+			reverse: { on: "profiles", has: "many", label: "loreUnlocks" },
+		},
+		loreUnlockEntry: {
+			forward: { on: "loreUnlocks", has: "one", label: "loreEntry" },
+			reverse: { on: "loreEntries", has: "many", label: "unlocks" },
 		},
 	},
 	rooms: {},

@@ -4,18 +4,25 @@ import type { AppSchema } from "./instant.schema";
 import { type AuthToken, getCurrentUser, logout } from "./lib/auth";
 import db from "./lib/db";
 import "./index.css";
+import { id } from "@instantdb/react";
 import { LogOut, Volume2, VolumeX } from "lucide-react";
 import { Achievements } from "./components/Achievements";
 import AuthPanel from "./components/AuthPanel";
 import { GameStats } from "./components/GameStats";
 import LeaderboardAsync from "./components/LeaderboardAsync";
+import LoreCodex from "./components/LoreCodex";
 import { Spells } from "./components/Spells";
 import { UpgradeShop } from "./components/UpgradeShop";
-import { getSfxEnabled, playClickSfx, playCritSfx, setSfxEnabled } from "./lib/sfx";
-import { useGameLogic } from "./lib/useGameLogic";
-import { swampBg, swampPanel } from "./types/swamp";
 import ZenPlayer from "./components/ZenPlayer";
+import {
+	getSfxEnabled,
+	playClickSfx,
+	playCritSfx,
+	setSfxEnabled,
+} from "./lib/sfx";
+import { useGameLogic } from "./lib/useGameLogic";
 import { startZenMusic, stopZenMusic } from "./lib/zen";
+import { swampBg, swampPanel } from "./types/swamp";
 
 export default function App() {
 	const [user, setUser] = useState<AuthToken | null>(null);
@@ -33,15 +40,61 @@ export default function App() {
 		setSfxEnabled(sfxOn);
 	}, [sfxOn]);
 
-			// Zen Mode: mute SFX; restore on exit; also ensure streams stop when exiting
+	// Seed a couple of sample lore entries (runs once per mount; safe if already present)
+	useEffect(() => {
+		(async () => {
+			const samples = [
+				{
+					key: "threshold-50",
+					title: "Whispers of the Reed-Circle",
+					guild: "Circle of Murmur",
+					order: 1,
+					body: "In the reed-circles where moonlight puddles, the guild gathers not to speak, but to listen. The frogs there do not croak—they enumerate.",
+				},
+				{
+					key: "threshold-500",
+					title: "On the Accounting of Lilies",
+					guild: "Order of Silent Numerals",
+					order: 2,
+					body: "A lily’s underside bears sigils not unlike prime factors. We do not pluck them. We invite them to disclose themselves.",
+				},
+				{
+					key: "threshold-5000",
+					title: "The Amphibian Theorem",
+					guild: "Guild of the Drowned Star",
+					order: 3,
+					body: "Beneath the still pane is a sky more honest than ours. Those who leap and do not return are not lost; they are proofs concluded.",
+				},
+			];
+			for (const s of samples) {
+				const { data } = await db.queryOnce({
+					loreEntries: { $: { where: { key: s.key } } },
+				});
+				if ((data.loreEntries || []).length === 0) {
+					const entryId = id();
+					await db.transact(
+						db.tx.loreEntries[entryId].create({
+							key: s.key,
+							title: s.title,
+							guild: s.guild,
+							order: s.order,
+							body: s.body,
+						}),
+					);
+				}
+			}
+		})();
+	}, []);
+
+	// Zen Mode: mute SFX; restore on exit; also ensure streams stop when exiting
 	useEffect(() => {
 		if (zenMode) {
 			setPrevSfx((p) => (p === null ? sfxOn : p));
 			if (sfxOn) setSfxOn(false);
 		} else {
-					// Stop any active radio stream and clear fallback marker
-					stopZenMusic();
-					setStreamOk(null);
+			// Stop any active radio stream and clear fallback marker
+			stopZenMusic();
+			setStreamOk(null);
 			if (prevSfx !== null) {
 				setSfxOn(prevSfx);
 				setPrevSfx(null);
@@ -71,7 +124,9 @@ export default function App() {
 		"profiles",
 		{ purchases: Record<string, never>; stats: Record<string, never> }
 	>;
-	const profile = statsData?.profiles?.[0] as unknown as ProfileWith | undefined;
+	const profile = statsData?.profiles?.[0] as unknown as
+		| ProfileWith
+		| undefined;
 	const stats = profile?.stats as InstaQLEntity<AppSchema, "stats"> | undefined;
 
 	// Game logic
@@ -119,6 +174,38 @@ export default function App() {
 						lastActiveAt: new Date().toISOString(),
 					}),
 				);
+
+				// Lore unlocks: simple thresholds; idempotent
+				const newTotal = (stats.totalFrogs ?? 0) + (applied ?? power);
+				const thresholds = [50, 500, 5000];
+				for (const t of thresholds) {
+					if (newTotal >= t && user) {
+						const loreKey = `threshold-${t}`;
+						const { data: udata } = await db.queryOnce({
+							loreUnlocks: { $: { where: { ownerId: user.ownerId, loreKey } } },
+						});
+						if ((udata.loreUnlocks || []).length === 0) {
+							const unlockId = id();
+							await db.transact(
+								db.tx.loreUnlocks[unlockId].create({
+									ownerId: user.ownerId,
+									loreKey,
+									unlockedAt: new Date().toISOString(),
+								}),
+							);
+							// Link unlock to the lore entry if present
+							const { data: edata } = await db.queryOnce({
+								loreEntries: { $: { where: { key: loreKey } } },
+							});
+							const entry = (edata.loreEntries || [])[0];
+							if (entry?.id) {
+								await db.transact(
+									db.tx.loreUnlocks[unlockId].link({ loreEntry: entry.id }),
+								);
+							}
+						}
+					}
+				}
 			}
 		} finally {
 			setTimeout(() => setClicking(false), 120);
@@ -148,7 +235,8 @@ export default function App() {
 								Frog Wizard Clicker
 							</h1>
 							<p className="text-emerald-100/90 max-w-prose">
-								Conjure frogs, trade trinkets, and rise on the swamp leaderboard.
+								Conjure frogs, trade trinkets, and rise on the swamp
+								leaderboard.
 							</p>
 							<div className="backdrop-blur-[1px]">
 								<LeaderboardAsync />
@@ -165,7 +253,9 @@ export default function App() {
 		<div className={`min-h-screen ${swampBg} text-emerald-50 p-4 md:p-6`}>
 			<div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
 				{/* Left: main clicker area (expands to full width in Zen Mode) */}
-				<div className={`space-y-4 md:space-y-6 ${zenMode ? "lg:col-span-3" : "lg:col-span-2"}`}>
+				<div
+					className={`space-y-4 md:space-y-6 ${zenMode ? "lg:col-span-3" : "lg:col-span-2"}`}
+				>
 					<div
 						className={`rounded-2xl ${swampPanel} relative overflow-hidden ${zenMode ? "p-6 md:p-8 min-h-[420px]" : "p-4 md:p-5"}`}
 					>
@@ -207,8 +297,8 @@ export default function App() {
 											zenMode
 												? "Muted in Zen Mode"
 												: sfxOn
-												? "Mute sounds"
-												: "Unmute sounds"
+													? "Mute sounds"
+													: "Unmute sounds"
 										}
 										disabled={zenMode}
 									>
@@ -255,19 +345,21 @@ export default function App() {
 					<div className="pt-1">
 						<button
 							type="button"
-									onClick={async () => {
-										setZenMode((z) => {
-											const turningOn = !z;
-											if (turningOn) {
-												// Try SomaFM streams first; fallback to YouTube if it fails
-												startZenMusic().then((ok) => setStreamOk(ok)).catch(() => setStreamOk(false));
-											} else {
-												stopZenMusic();
-												setStreamOk(null);
-											}
-											return turningOn;
-										});
-									}}
+							onClick={async () => {
+								setZenMode((z) => {
+									const turningOn = !z;
+									if (turningOn) {
+										// Try SomaFM streams first; fallback to YouTube if it fails
+										startZenMusic()
+											.then((ok) => setStreamOk(ok))
+											.catch(() => setStreamOk(false));
+									} else {
+										stopZenMusic();
+										setStreamOk(null);
+									}
+									return turningOn;
+								});
+							}}
 							className={`w-full text-center font-semibold tracking-wide rounded-xl border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 ${
 								zenMode
 									? "bg-gradient-to-r from-emerald-900/60 via-emerald-800/60 to-teal-800/60 border-emerald-700 text-emerald-100 hover:from-emerald-900/70 hover:to-teal-800/70"
@@ -313,6 +405,7 @@ export default function App() {
 						onCast={castSpell}
 					/>
 					{!zenMode && <Achievements achievements={achievementList} />}
+					{!zenMode && user && <LoreCodex ownerId={user.ownerId} />}
 				</div>
 			</div>
 			{/* Hidden YouTube lofi player for Zen Mode fallback when streams fail */}
