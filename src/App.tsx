@@ -11,14 +11,11 @@ import { GameStats } from "./components/GameStats";
 import LeaderboardAsync from "./components/LeaderboardAsync";
 import { Spells } from "./components/Spells";
 import { UpgradeShop } from "./components/UpgradeShop";
-import {
-	getSfxEnabled,
-	playClickSfx,
-	playCritSfx,
-	setSfxEnabled,
-} from "./lib/sfx";
+import { getSfxEnabled, playClickSfx, playCritSfx, setSfxEnabled } from "./lib/sfx";
 import { useGameLogic } from "./lib/useGameLogic";
 import { swampBg, swampPanel } from "./types/swamp";
+import ZenPlayer from "./components/ZenPlayer";
+import { startZenMusic, stopZenMusic } from "./lib/zen";
 
 export default function App() {
 	const [user, setUser] = useState<AuthToken | null>(null);
@@ -28,16 +25,31 @@ export default function App() {
 		mult: 1,
 	});
 	const [sfxOn, setSfxOn] = useState<boolean>(() => getSfxEnabled());
+	const [zenMode, setZenMode] = useState(false);
+	const [prevSfx, setPrevSfx] = useState<boolean | null>(null);
+	const [streamOk, setStreamOk] = useState<boolean | null>(null);
 
 	useEffect(() => {
 		setSfxEnabled(sfxOn);
 	}, [sfxOn]);
 
-	// Load current user from cookie
+		// Zen Mode: mute SFX; restore on exit (music handled by <ZenPlayer />)
 	useEffect(() => {
-		(async () => {
-			setUser(await getCurrentUser());
-		})();
+		if (zenMode) {
+			setPrevSfx((p) => (p === null ? sfxOn : p));
+			if (sfxOn) setSfxOn(false);
+		} else {
+			if (prevSfx !== null) {
+				setSfxOn(prevSfx);
+				setPrevSfx(null);
+			}
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [zenMode]);
+
+	// Auth bootstrap
+	useEffect(() => {
+		(async () => setUser(await getCurrentUser()))();
 	}, []);
 
 	// Subscribe to current user's stats
@@ -50,19 +62,16 @@ export default function App() {
 				},
 			}
 		: null;
-
 	const { data: statsData } = db.useQuery(statsQuery);
 	type ProfileWith = InstaQLEntity<
 		AppSchema,
 		"profiles",
 		{ purchases: Record<string, never>; stats: Record<string, never> }
 	>;
-	const profile = statsData?.profiles?.[0] as unknown as
-		| ProfileWith
-		| undefined;
+	const profile = statsData?.profiles?.[0] as unknown as ProfileWith | undefined;
 	const stats = profile?.stats as InstaQLEntity<AppSchema, "stats"> | undefined;
 
-	// Hook up local game logic features (stats hydrated from DB)
+	// Game logic
 	const {
 		gameState,
 		upgrades,
@@ -136,8 +145,7 @@ export default function App() {
 								Frog Wizard Clicker
 							</h1>
 							<p className="text-emerald-100/90 max-w-prose">
-								Conjure frogs, trade trinkets, and rise on the swamp
-								leaderboard.
+								Conjure frogs, trade trinkets, and rise on the swamp leaderboard.
 							</p>
 							<div className="backdrop-blur-[1px]">
 								<LeaderboardAsync />
@@ -153,9 +161,10 @@ export default function App() {
 	return (
 		<div className={`min-h-screen ${swampBg} text-emerald-50 p-4 md:p-6`}>
 			<div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
-				<div className="lg:col-span-2 space-y-4 md:space-y-6">
+				{/* Left: main clicker area (expands to full width in Zen Mode) */}
+				<div className={`space-y-4 md:space-y-6 ${zenMode ? "lg:col-span-3" : "lg:col-span-2"}`}>
 					<div
-						className={`p-4 md:p-5 rounded-2xl ${swampPanel} relative overflow-hidden`}
+						className={`rounded-2xl ${swampPanel} relative overflow-hidden ${zenMode ? "p-6 md:p-8 min-h-[420px]" : "p-4 md:p-5"}`}
 					>
 						{/* Inset background video for the main click area */}
 						<video
@@ -186,8 +195,19 @@ export default function App() {
 										type="button"
 										onClick={() => setSfxOn((v) => !v)}
 										aria-label={sfxOn ? "Mute sounds" : "Unmute sounds"}
-										className="px-2 py-1.5 rounded-lg bg-emerald-900/40 border border-emerald-700 text-emerald-200 text-sm"
-										title={sfxOn ? "Mute sounds" : "Unmute sounds"}
+										className={`px-2 py-1.5 rounded-lg border text-emerald-200 text-sm ${
+											zenMode
+												? "bg-emerald-900/30 border-emerald-800 opacity-60 cursor-not-allowed"
+												: "bg-emerald-900/40 border-emerald-700"
+										}`}
+										title={
+											zenMode
+												? "Muted in Zen Mode"
+												: sfxOn
+												? "Mute sounds"
+												: "Unmute sounds"
+										}
+										disabled={zenMode}
 									>
 										{sfxOn ? <Volume2 size={16} /> : <VolumeX size={16} />}
 									</button>
@@ -216,7 +236,7 @@ export default function App() {
 								<button
 									type="button"
 									onClick={addClick}
-									className={`text-6xl md:text-7xl transition-transform ${clicking ? "scale-95" : "hover:scale-105"}`}
+									className={`${zenMode ? "text-7xl md:text-8xl" : "text-6xl md:text-7xl"} transition-transform ${clicking ? "scale-95" : "hover:scale-105"}`}
 									aria-label="Conjure a frog"
 								>
 									🐸
@@ -228,6 +248,35 @@ export default function App() {
 						</div>
 					</div>
 
+					{/* Zen Mode toggle button sits below the clicker panel */}
+					<div className="pt-1">
+						<button
+							type="button"
+									onClick={async () => {
+										setZenMode((z) => {
+											const turningOn = !z;
+											if (turningOn) {
+												// Try SomaFM streams first; fallback to YouTube if it fails
+												startZenMusic().then((ok) => setStreamOk(ok)).catch(() => setStreamOk(false));
+											} else {
+												stopZenMusic();
+												setStreamOk(null);
+											}
+											return turningOn;
+										});
+									}}
+							className={`w-full text-center font-semibold tracking-wide rounded-xl border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 ${
+								zenMode
+									? "bg-gradient-to-r from-emerald-900/60 via-emerald-800/60 to-teal-800/60 border-emerald-700 text-emerald-100 hover:from-emerald-900/70 hover:to-teal-800/70"
+									: "bg-gradient-to-r from-emerald-800/50 via-emerald-700/50 to-teal-700/50 border-emerald-600 text-emerald-100 hover:from-emerald-800/60 hover:to-teal-700/60"
+							}`}
+							style={{ padding: "0.95rem 1rem" }}
+							aria-pressed={zenMode}
+						>
+							{zenMode ? "Exit Zen Mode" : "Enter Zen Mode"}
+						</button>
+					</div>
+
 					<div className={`p-4 md:p-5 rounded-2xl ${swampPanel}`}>
 						<GameStats
 							gameState={gameState}
@@ -237,6 +286,7 @@ export default function App() {
 					</div>
 				</div>
 
+				{/* Right: sidebar content (hidden pieces in Zen Mode) */}
 				<div
 					className="space-y-4 md:space-y-6 max-h-[90vh] overflow-y-auto overflow-x-hidden overscroll-contain pr-1
           [scrollbar-width:thin] [scrollbar-color:theme(colors.emerald.500)_transparent]
@@ -247,7 +297,7 @@ export default function App() {
           [&::-webkit-scrollbar-thumb:hover]:bg-emerald-500/70
           [&::-webkit-scrollbar-corner]:bg-transparent"
 				>
-					<LeaderboardAsync />
+					{!zenMode && <LeaderboardAsync />}
 					<UpgradeShop
 						upgrades={upgrades}
 						totalFrogs={gameState.totalFrogs}
@@ -259,9 +309,11 @@ export default function App() {
 						totalFrogs={gameState.totalFrogs}
 						onCast={castSpell}
 					/>
-					<Achievements achievements={achievementList} />
+					{!zenMode && <Achievements achievements={achievementList} />}
 				</div>
 			</div>
+			{/* Hidden YouTube lofi player for Zen Mode fallback when streams fail */}
+			<ZenPlayer active={zenMode && streamOk === false} />
 		</div>
 	);
 }
