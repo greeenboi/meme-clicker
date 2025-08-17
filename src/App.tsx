@@ -1,27 +1,37 @@
 import type { InstaQLEntity, InstaQLParams } from "@instantdb/react";
 import { useEffect, useState } from "react";
 import type { AppSchema } from "./instant.schema";
-import {
-	type AuthToken,
-	getCurrentUser,
-	logout,
-} from "./lib/auth";
+import { type AuthToken, getCurrentUser, logout } from "./lib/auth";
 import db from "./lib/db";
 import "./index.css";
+import { LogOut, Volume2, VolumeX } from "lucide-react";
 import { Achievements } from "./components/Achievements";
+import AuthPanel from "./components/AuthPanel";
 import { GameStats } from "./components/GameStats";
+import LeaderboardAsync from "./components/LeaderboardAsync";
 import { Spells } from "./components/Spells";
 import { UpgradeShop } from "./components/UpgradeShop";
-import { playClickSfx, playCritSfx } from "./lib/sfx";
+import {
+	getSfxEnabled,
+	playClickSfx,
+	playCritSfx,
+	setSfxEnabled,
+} from "./lib/sfx";
 import { useGameLogic } from "./lib/useGameLogic";
 import { swampBg, swampPanel } from "./types/swamp";
-import LeaderboardAsync from "./components/LeaderboardAsync";
-import AuthPanel from "./components/AuthPanel";
 
 export default function App() {
 	const [user, setUser] = useState<AuthToken | null>(null);
 	const [clicking, setClicking] = useState(false);
-	const [crit, setCrit] = useState<{ show: boolean; mult: number }>({ show: false, mult: 1 });
+	const [crit, setCrit] = useState<{ show: boolean; mult: number }>({
+		show: false,
+		mult: 1,
+	});
+	const [sfxOn, setSfxOn] = useState<boolean>(() => getSfxEnabled());
+
+	useEffect(() => {
+		setSfxEnabled(sfxOn);
+	}, [sfxOn]);
 
 	// Load current user from cookie
 	useEffect(() => {
@@ -126,7 +136,8 @@ export default function App() {
 								Frog Wizard Clicker
 							</h1>
 							<p className="text-emerald-100/90 max-w-prose">
-								Conjure frogs, trade trinkets, and rise on the swamp leaderboard.
+								Conjure frogs, trade trinkets, and rise on the swamp
+								leaderboard.
 							</p>
 							<div className="backdrop-blur-[1px]">
 								<LeaderboardAsync />
@@ -143,7 +154,9 @@ export default function App() {
 		<div className={`min-h-screen ${swampBg} text-emerald-50 p-4 md:p-6`}>
 			<div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
 				<div className="lg:col-span-2 space-y-4 md:space-y-6">
-					<div className={`p-4 md:p-5 rounded-2xl ${swampPanel} relative overflow-hidden`}>
+					<div
+						className={`p-4 md:p-5 rounded-2xl ${swampPanel} relative overflow-hidden`}
+					>
 						{/* Inset background video for the main click area */}
 						<video
 							className="absolute inset-0 w-full h-full object-cover opacity-30 [filter:saturate(0.9)] pointer-events-none motion-reduce:hidden"
@@ -159,48 +172,59 @@ export default function App() {
 
 						<div className="relative z-10">
 							<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
-							<div>
-								<div className="text-base md:text-lg font-bold">
-									Welcome, {user.username} 🐸
+								<div>
+									<div className="text-base md:text-lg font-bold">
+										Welcome, {user.username} 🐸
+									</div>
+									<div className="text-emerald-200 text-xs md:text-sm">
+										Total Frogs:{" "}
+										{Math.floor(gameState.totalFrogs).toLocaleString()}
+									</div>
 								</div>
-								<div className="text-emerald-200 text-xs md:text-sm">
-									Total Frogs:{" "}
-									{Math.floor(gameState.totalFrogs).toLocaleString()}
+								<div className="flex items-center gap-2">
+									<button
+										type="button"
+										onClick={() => setSfxOn((v) => !v)}
+										aria-label={sfxOn ? "Mute sounds" : "Unmute sounds"}
+										className="px-2 py-1.5 rounded-lg bg-emerald-900/40 border border-emerald-700 text-emerald-200 text-sm"
+										title={sfxOn ? "Mute sounds" : "Unmute sounds"}
+									>
+										{sfxOn ? <Volume2 size={16} /> : <VolumeX size={16} />}
+									</button>
+									<button
+										type="button"
+										onClick={() => {
+											logout();
+											location.reload();
+										}}
+										className="px-1.5 py-1.5 rounded-lg bg-emerald-900/40 border border-emerald-700 text-emerald-200 text-sm"
+									>
+										<LogOut size={16} />
+									</button>
 								</div>
 							</div>
-							<button
-								type="button"
-								onClick={() => {
-									logout();
-									location.reload();
-								}}
-								className="px-3 py-1.5 rounded-lg bg-emerald-900/40 border border-emerald-700 text-emerald-200 text-sm"
-							>
-								Logout
-							</button>
-						</div>
 
-						<div className="relative flex flex-col items-center py-6 md:py-8">
-							{crit.show && (
-								<div
-									className="absolute -top-2 md:-top-3 translate-y-[-100%] select-none text-amber-300 font-extrabold text-lg md:text-2xl drop-shadow-[0_2px_2px_rgba(0,0,0,0.6)] animate-bounce"
-									aria-hidden
+							<div className="relative flex flex-col items-center py-6 md:py-8">
+								{crit.show && (
+									<div
+										className="absolute -top-2 md:-top-3 translate-y-[-100%] select-none text-amber-300 font-extrabold text-lg md:text-2xl drop-shadow-[0_2px_2px_rgba(0,0,0,0.6)] animate-bounce"
+										aria-hidden
+									>
+										✨ CRIT! x{crit.mult}
+									</div>
+								)}
+								<button
+									type="button"
+									onClick={addClick}
+									className={`text-6xl md:text-7xl transition-transform ${clicking ? "scale-95" : "hover:scale-105"}`}
+									aria-label="Conjure a frog"
 								>
-									✨ CRIT! x{crit.mult}
+									🐸
+								</button>
+								<div className="mt-3 text-emerald-200 text-sm">
+									Clicks: {Math.floor(gameState.totalClicks).toLocaleString()}
 								</div>
-							)}
-							<button
-								type="button"
-								onClick={addClick}
-								className={`text-6xl md:text-7xl transition-transform ${clicking ? "scale-95" : "hover:scale-105"}`}
-								aria-label="Conjure a frog"
-							>
-								🐸
-							</button>
-							<div className="mt-3 text-emerald-200 text-sm">
-								Clicks: {Math.floor(gameState.totalClicks).toLocaleString()}
 							</div>
-						</div>
 						</div>
 					</div>
 

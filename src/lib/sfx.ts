@@ -1,4 +1,5 @@
 import CRAZY_FROG from "../assets/sfx/crazy-frog.mp3";
+import CRIT from "../assets/sfx/crit.mp3";
 import CROAKFEST from "../assets/sfx/croakfest.mp3";
 import FROG_MOAN from "../assets/sfx/frog-moan.mp3";
 import GAY_FROGS from "../assets/sfx/gay-frogs.mp3";
@@ -6,10 +7,36 @@ import HAHAHA_FROG from "../assets/sfx/hahaha-frog.mp3";
 // Lightweight SFX helper – Vite will bundle these as assets
 import SINGLE_CROAK from "../assets/sfx/single-croak.mp3";
 import SQUEAK from "../assets/sfx/squeak.mp3";
-import CRIT from "../assets/sfx/crit.mp3";
+
+// Global SFX switch (default on), hydrated from localStorage if present
+let SFX_ENABLED = true;
+try {
+	if (typeof window !== "undefined" && window.localStorage) {
+		const v = window.localStorage.getItem("frog_sfx");
+		if (v === "on") SFX_ENABLED = true;
+		else if (v === "off") SFX_ENABLED = false;
+	}
+} catch {
+	// ignore access errors (e.g., privacy mode)
+}
+
+export function setSfxEnabled(on: boolean) {
+	SFX_ENABLED = !!on;
+	try {
+		if (typeof window !== "undefined" && window.localStorage) {
+			window.localStorage.setItem("frog_sfx", SFX_ENABLED ? "on" : "off");
+		}
+	} catch {
+		// ignore access errors
+	}
+}
+export function getSfxEnabled() {
+	return SFX_ENABLED;
+}
 
 // Play a sound without blocking UI; catch to suppress autoplay errors
 function play(src: string, volume = 1.0) {
+	if (!SFX_ENABLED) return;
 	try {
 		const audio = new Audio(src);
 		audio.volume = volume;
