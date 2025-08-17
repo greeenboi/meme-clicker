@@ -3,6 +3,8 @@ export interface GameState {
 	frogsPerSecond: number;
 	totalClicks: number;
 	prestige: number;
+	// optional crit metadata (used for transient UI)
+	lastCritAt?: number;
 }
 
 export interface Upgrade {

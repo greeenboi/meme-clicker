@@ -87,14 +87,18 @@ export const useGameLogic = (initial?: {
 		return Math.floor(basePower * spellMultiplier);
 	}, [upgrades, activeSpells, goldenClicks]);
 
-	// Handle frog clicking
+	// Handle frog clicking with critical chance
 	const clickFrog = useCallback(() => {
-		const clickPower = calculateClickPower();
+		const base = calculateClickPower();
+		// 10% crit chance, 3x multiplier; tweakable later
+		const isCrit = Math.random() < 0.1;
+		const effective = isCrit ? base * 3 : base;
 
 		setGameState((prev) => ({
 			...prev,
-			totalFrogs: prev.totalFrogs + clickPower,
+			totalFrogs: prev.totalFrogs + effective,
 			totalClicks: prev.totalClicks + 1,
+			lastCritAt: isCrit ? Date.now() : prev.lastCritAt,
 		}));
 
 		if (goldenClicks > 0) {
@@ -102,11 +106,12 @@ export const useGameLogic = (initial?: {
 		}
 
 		// Check achievements
-		// Note: using functional update above, so compute next values explicitly
 		checkAchievements(
-			gameState.totalFrogs + clickPower,
+			gameState.totalFrogs + effective,
 			gameState.totalClicks + 1,
 		);
+
+		return effective;
 	}, [gameState, goldenClicks, calculateClickPower, checkAchievements]);
 
 	// Purchase upgrade

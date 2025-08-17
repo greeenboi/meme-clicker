@@ -6,6 +6,7 @@ import HAHAHA_FROG from "../assets/sfx/hahaha-frog.mp3";
 // Lightweight SFX helper – Vite will bundle these as assets
 import SINGLE_CROAK from "../assets/sfx/single-croak.mp3";
 import SQUEAK from "../assets/sfx/squeak.mp3";
+import CRIT from "../assets/sfx/crit.mp3";
 
 // Play a sound without blocking UI; catch to suppress autoplay errors
 function play(src: string, volume = 1.0) {
@@ -44,4 +45,8 @@ export function playClickSfx(totalClicks: number) {
 			play(GAY_FROGS, 0.85); // 0.6%
 		else if (chance(0.004)) play(HAHAHA_FROG, 0.85); // 0.4%
 	}
+}
+
+export function playCritSfx() {
+	play(CRIT, 0.9);
 }
