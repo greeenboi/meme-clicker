@@ -1,9 +1,16 @@
-import { useState, type FormEvent } from "react";
-import { login, signUp, type AuthToken } from "../lib/auth";
-import { loginSchema, signUpSchema, type SignUpInput, type LoginInput } from "../lib/zod.auth";
+import { type FormEvent, useState } from "react";
+import { type AuthToken, login, signUp } from "../lib/auth";
+import {
+	type LoginInput,
+	type SignUpInput,
+	loginSchema,
+	signUpSchema,
+} from "../lib/zod.auth";
 import { swampPanel } from "../types/swamp";
 
-export default function AuthPanel({ onAuthed }: { onAuthed: (u: AuthToken) => void }) {
+export default function AuthPanel({
+	onAuthed,
+}: { onAuthed: (u: AuthToken) => void }) {
 	const [mode, setMode] = useState<"login" | "signup">("signup");
 	const [email, setEmail] = useState<string>("");
 	const [username, setUsername] = useState<string>("");
@@ -25,9 +32,11 @@ export default function AuthPanel({ onAuthed }: { onAuthed: (u: AuthToken) => vo
 			if (mode === "signup") {
 				const parsed = signUpSchema.safeParse({ email, username, password });
 				if (!parsed.success) {
-					const fe: Partial<Record<"email" | "username" | "password", string>> = {};
+					const fe: Partial<Record<"email" | "username" | "password", string>> =
+						{};
 					for (const issue of parsed.error.issues) {
-						const k = (issue.path[0] as "email" | "username" | "password") ?? "email";
+						const k =
+							(issue.path[0] as "email" | "username" | "password") ?? "email";
 						if (!fe[k]) fe[k] = issue.message;
 					}
 					setFieldErrors(fe);
@@ -39,9 +48,11 @@ export default function AuthPanel({ onAuthed }: { onAuthed: (u: AuthToken) => vo
 			} else {
 				const parsed = loginSchema.safeParse({ email, password });
 				if (!parsed.success) {
-					const fe: Partial<Record<"email" | "username" | "password", string>> = {};
+					const fe: Partial<Record<"email" | "username" | "password", string>> =
+						{};
 					for (const issue of parsed.error.issues) {
-						const k = (issue.path[0] as "email" | "username" | "password") ?? "email";
+						const k =
+							(issue.path[0] as "email" | "username" | "password") ?? "email";
 						if (!fe[k]) fe[k] = issue.message;
 					}
 					setFieldErrors(fe);
@@ -88,7 +99,9 @@ export default function AuthPanel({ onAuthed }: { onAuthed: (u: AuthToken) => vo
 							placeholder="frog_wizard"
 						/>
 						{fieldErrors.username && (
-							<div className="text-red-300 text-xs mt-1">{fieldErrors.username}</div>
+							<div className="text-red-300 text-xs mt-1">
+								{fieldErrors.username}
+							</div>
 						)}
 					</div>
 				)}
@@ -104,7 +117,9 @@ export default function AuthPanel({ onAuthed }: { onAuthed: (u: AuthToken) => vo
 						placeholder="••••••••"
 					/>
 					{fieldErrors.password && (
-						<div className="text-red-300 text-xs mt-1">{fieldErrors.password}</div>
+						<div className="text-red-300 text-xs mt-1">
+							{fieldErrors.password}
+						</div>
 					)}
 				</div>
 				{error && <div className="text-red-300 text-sm">{error}</div>}
